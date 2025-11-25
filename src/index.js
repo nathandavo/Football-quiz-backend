@@ -30,3 +30,4 @@ app.get("/random-fixture", (req, res) => {
   const randomIndex = Math.floor(Math.random() * filteredFixtures.length);
   res.json(filteredFixtures[randomIndex]);
 });
+
