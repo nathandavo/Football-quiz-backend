@@ -14,7 +14,6 @@ app.use(cors()); // Allow cross-origin requests
 let fixtures = [];
 const fixturesFolder = path.join(__dirname, "fixtures");
 
-// Check if fixtures folder exists
 if (!fs.existsSync(fixturesFolder)) {
   console.error("Fixtures folder not found! Please create a 'fixtures' folder in the project root.");
   process.exit(1);
@@ -36,29 +35,52 @@ console.log(`Loaded ${fixtures.length} total fixtures.`);
 // ---------- In-memory leaderboard ----------
 let leaderboard = []; // { name: string, score: number }
 
-// ---------- GET random fixture (optionally filtered by year) ----------
+// ---------- Helper to get season from a date ----------
+const getSeason = (dateString) => {
+  const [day, month, year] = dateString.split("/").map(Number);
+  // Football season logic: July+ → season starts this year
+  if (month >= 7) {
+    return `${year}/${(year + 1).toString().slice(-2)}`; // e.g., "2015/16"
+  } else {
+    return `${year - 1}/${(year).toString().slice(-2)}`;
+  }
+};
+
+// ---------- GET random fixture (optionally filtered by year or season) ----------
 app.get("/random-fixture", (req, res) => {
   if (!fixtures.length) {
     return res.status(500).json({ error: "No fixtures loaded" });
   }
 
   const year = req.query.year;
+  const season = req.query.season;
 
   let filteredFixtures = fixtures;
 
   // Filter by year if provided
   if (year) {
-    filteredFixtures = fixtures.filter(fix => {
+    filteredFixtures = filteredFixtures.filter(fix => {
       if (fix.date && fix.date.endsWith(year)) return true;
       if (fix.year && fix.year.toString() === year) return true;
       return false;
     });
-
-    if (filteredFixtures.length === 0) {
-      return res.status(404).json({ error: `No fixtures found for year ${year}` });
-    }
   }
 
+  // Filter by season if provided
+  if (season) {
+    filteredFixtures = filteredFixtures.filter(fix => {
+      if (fix.season && fix.season === season) return true;
+      if (fix.date && getSeason(fix.date) === season) return true;
+      return false;
+    });
+  }
+
+  // Check if any fixtures left after filtering
+  if (filteredFixtures.length === 0) {
+    return res.status(404).json({ error: "No fixtures found for the selected year/season." });
+  }
+
+  // Pick a random fixture from filtered list
   const randomIndex = Math.floor(Math.random() * filteredFixtures.length);
   res.json(filteredFixtures[randomIndex]);
 });
@@ -88,5 +110,3 @@ app.get("/leaderboard", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-
