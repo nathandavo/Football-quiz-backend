@@ -1,53 +1,60 @@
-import express from "express";
-import fetch from "node-fetch";
-import OpenAI from "openai";
-import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const bodyParser = require("body-parser");
+const cors = require("cors");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = 3000;
 
-app.use(cors());
+app.use(bodyParser.json());
+app.use(cors()); // Allow cross-origin requests
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// ---------- Load all fixtures ----------
+let fixtures = [];
+const fixturesFolder = path.join(__dirname, "fixtures");
 
-app.get("/quiz-question", async (req, res) => {
-  try {
-    const response = await fetch(
-      "https://api-football-v1.p.rapidapi.com/v3/players/topscorers?league=39&season=2025",
-      {
-        method: "GET",
-        headers: {
-          "X-RapidAPI-Key": process.env.API_FOOTBALL_KEY,
-          "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com",
-        },
-      }
-    );
-    const data = await response.json();
-    const topScorers = data.response.slice(0, 5);
-
-    const prompt = `
-    Create one multiple-choice football quiz question based on these top scorers:
-    ${JSON.stringify(topScorers)}
-    Provide the question, 4 answer options, and indicate the correct answer.
-    Format as JSON: { question: "", options: ["", "", "", ""], answer: "" }
-    `;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const quiz = completion.choices[0].message.content;
-    res.json(JSON.parse(quiz));
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Error generating quiz question");
+fs.readdirSync(fixturesFolder).forEach(file => {
+  if (file.endsWith(".json")) {
+    const data = JSON.parse(fs.readFileSync(path.join(fixturesFolder, file)));
+    fixtures = fixtures.concat(data);
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+console.log(`Loaded ${fixtures.length} total fixtures.`);
+
+// ---------- In-memory leaderboard ----------
+let leaderboard = []; // { name: string, score: number }
+
+// ---------- GET random fixture ----------
+app.get("/random-fixture", (req, res) => {
+  if (!fixtures.length) return res.status(500).json({ error: "No fixtures loaded" });
+  const randomIndex = Math.floor(Math.random() * fixtures.length);
+  res.json(fixtures[randomIndex]);
 });
+
+// ---------- POST submit score ----------
+app.post("/submit-score", (req, res) => {
+  const { name, score } = req.body;
+  if (!name || typeof score !== "number") return res.status(400).json({ error: "Invalid data" });
+
+  // Add to leaderboard
+  leaderboard.push({ name, score });
+
+  // Keep top 20 scores only
+  leaderboard.sort((a, b) => b.score - a.score);
+  if (leaderboard.length > 20) leaderboard = leaderboard.slice(0, 20);
+
+  res.json({ success: true, leaderboard });
+});
+
+// ---------- GET leaderboard ----------
+app.get("/leaderboard", (req, res) => {
+  res.json(leaderboard);
+});
+
+// ---------- Start server ----------
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
